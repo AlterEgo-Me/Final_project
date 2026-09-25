@@ -3,7 +3,6 @@ import org.example.model.Operation;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.example.database.Database;
-import org.example.model.Operation;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -39,6 +38,11 @@ public class BalanceController {
     ) throws SQLException {
 
         return database.getOperationList(user_id, fromDate, toDate);
+    }
+
+    @PostMapping("/transfer")
+    public void transferMoney(@RequestParam int fromUserId, @RequestParam int toUserId,@RequestParam BigDecimal bigDecimal) throws SQLException {
+        database.transferMoney(fromUserId,toUserId,bigDecimal);
     }
 
     public BalanceController(Database database) {

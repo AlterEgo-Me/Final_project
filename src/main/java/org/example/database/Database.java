@@ -36,80 +36,166 @@ public class Database {
     }
 
     public BigDecimal getBalance(int user_id) throws SQLException {
-        try (Connection connection = getConnection(); Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery("SELECT balance FROM accounts WHERE user_id = " + user_id + ";")) {
+
+        try (Connection connection = getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT balance FROM accounts WHERE user_id = ?")) {
+
+            statement.setInt(1, user_id);
+
+            ResultSet resultSet = statement.executeQuery();
+
             if (resultSet.next()) {
                 return resultSet.getBigDecimal("balance");
             }
-            throw new IllegalStateException("Данные с user_id: " + user_id + " не обнаружены");
-        }
 
+            throw new IllegalStateException(
+                    "Данные с user_id: " + user_id + " не обнаружены"
+            );
+        }
     }
 
     public void putMoney(int user_id, BigDecimal amount) throws SQLException {
-        Connection connection = getConnection();
-        try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE accounts SET balance = balance + ? WHERE user_id = ?");
-             PreparedStatement operationStatement = connection.prepareStatement(
-                     "INSERT INTO public.operations (user_id, type, amount, operation_date) VALUES (?, ?, ?, CURRENT_TIMESTAMP)")
-        ) {
+
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "Сумма пополнения должна быть больше нуля"
+            );
+        }
+
+        Connection connection = null;
+
+        try {
+            connection = getConnection();
             connection.setAutoCommit(false);
-            statement.setBigDecimal(1, amount);
-            statement.setInt(2, user_id);
 
-            int updatedRows = statement.executeUpdate();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "UPDATE accounts SET balance = balance + ? WHERE user_id = ?");
+                 PreparedStatement operationStatement = connection.prepareStatement(
+                         "INSERT INTO public.operations " +
+                                 "(user_id, type, amount, operation_date) " +
+                                 "VALUES (?, ?, ?, CURRENT_TIMESTAMP)")
+            ) {
 
-            if (updatedRows == 0) {
-                throw new IllegalStateException(
-                        "Данные с user_id: " + user_id + " не обнаружены"
-                );
+                statement.setBigDecimal(1, amount);
+                statement.setInt(2, user_id);
+
+                int updatedRows = statement.executeUpdate();
+
+                if (updatedRows == 0) {
+                    throw new IllegalStateException(
+                            "Данные с user_id: " + user_id + " не обнаружены"
+                    );
+                }
+
+                operationStatement.setInt(1, user_id);
+                operationStatement.setInt(2, 1); // 1 - пополнение
+                operationStatement.setBigDecimal(3, amount);
+
+                operationStatement.executeUpdate();
+
+                connection.commit();
             }
 
-            operationStatement.setInt(1, user_id);
-            operationStatement.setInt(2, 1);
-            operationStatement.setBigDecimal(3, amount);
-
-            operationStatement.executeUpdate();
-            connection.commit();
         } catch (Exception e) {
-            connection.rollback();
+
+            if (connection != null) {
+                connection.rollback();
+            }
+
             throw e;
+
         } finally {
-            connection.close();
+
+            if (connection != null) {
+                connection.close();
+            }
         }
     }
 
 
     public void takeMoney(int user_id, BigDecimal amount) throws SQLException {
-        int checkBalance = getBalance(user_id).compareTo(amount);
-        if (checkBalance < 0) {
-            throw new IllegalStateException("Баланс слишком мал для вычета");
+
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "Сумма снятия должна быть больше нуля"
+            );
         }
-        Connection connection = getConnection();
-        try (PreparedStatement statement = connection.prepareStatement("UPDATE accounts SET balance = balance - ? WHERE user_id = ?");
-             PreparedStatement operationStatement = connection.prepareStatement(
-                     "INSERT INTO public.operations (user_id, type, amount, operation_date) VALUES (?, ?, ?, CURRENT_TIMESTAMP)")) {
+
+        Connection connection = null;
+
+        try {
+
+            connection = getConnection();
             connection.setAutoCommit(false);
-            statement.setBigDecimal(1, amount);
-            statement.setInt(2, user_id);
 
-            int updatedRows = statement.executeUpdate();
 
-            if (updatedRows == 0) {
-                throw new IllegalStateException("Данные с user_id: " + user_id + " не обнаружены");
+            try (PreparedStatement balanceStatement = connection.prepareStatement(
+                    "SELECT balance FROM accounts WHERE user_id = ?");
+
+                 PreparedStatement updateStatement = connection.prepareStatement(
+                         "UPDATE accounts SET balance = balance - ? WHERE user_id = ?");
+
+                 PreparedStatement operationStatement = connection.prepareStatement(
+                         "INSERT INTO public.operations " +
+                                 "(user_id, type, amount, operation_date) " +
+                                 "VALUES (?, ?, ?, CURRENT_TIMESTAMP)")
+            ) {
+
+
+                balanceStatement.setInt(1, user_id);
+
+                ResultSet resultSet = balanceStatement.executeQuery();
+
+
+                if (!resultSet.next()) {
+                    throw new IllegalStateException(
+                            "Пользователь не найден"
+                    );
+                }
+
+
+                BigDecimal balance = resultSet.getBigDecimal("balance");
+
+
+                if (balance.compareTo(amount) < 0) {
+                    throw new IllegalStateException(
+                            "Баланс слишком мал для вычета"
+                    );
+                }
+
+
+                updateStatement.setBigDecimal(1, amount);
+                updateStatement.setInt(2, user_id);
+
+                updateStatement.executeUpdate();
+
+
+                operationStatement.setInt(1, user_id);
+                operationStatement.setInt(2, 2);
+                operationStatement.setBigDecimal(3, amount);
+
+                operationStatement.executeUpdate();
+
+
+                connection.commit();
+
             }
 
-            operationStatement.setInt(1, user_id);
-            operationStatement.setInt(2, 2);
-            operationStatement.setBigDecimal(3, amount);
 
-            operationStatement.executeUpdate();
-            connection.commit();
-        } catch (Exception e){
-            connection.rollback();
+        } catch (Exception e) {
+
+            if(connection != null){
+                connection.rollback();
+            }
+
             throw e;
+
         } finally {
-            connection.close();
+
+            if(connection != null){
+                connection.close();
+            }
         }
     }
 
@@ -155,5 +241,92 @@ public class Database {
         }
 
         return operations;
+    }
+
+    public void transferMoney(int fromUserId, int toUserId, BigDecimal amount) throws SQLException {
+
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Сумма перевода должна быть больше нуля");
+        }
+
+        Connection connection = getConnection();
+
+        try (PreparedStatement balanceStatement = connection.prepareStatement(
+                "SELECT balance FROM accounts WHERE user_id = ?");
+
+             PreparedStatement fromStatement = connection.prepareStatement(
+                     "UPDATE accounts SET balance = balance - ? WHERE user_id = ?");
+
+             PreparedStatement toStatement = connection.prepareStatement(
+                     "UPDATE accounts SET balance = balance + ? WHERE user_id = ?");
+
+             PreparedStatement operationStatement = connection.prepareStatement(
+                     "INSERT INTO public.operations " +
+                             "(user_id, target_user_id, type, amount, operation_date) " +
+                             "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)")) {
+
+            connection.setAutoCommit(false);
+
+
+            balanceStatement.setInt(1, fromUserId);
+
+            ResultSet resultSet = balanceStatement.executeQuery();
+
+            if (!resultSet.next()) {
+                throw new IllegalStateException(
+                        "Пользователь-отправитель не существует"
+                );
+            }
+
+            BigDecimal balance = resultSet.getBigDecimal("balance");
+
+            if (balance.compareTo(amount) < 0) {
+                throw new IllegalStateException(
+                        "Баланс слишком мал для перевода"
+                );
+            }
+
+
+            fromStatement.setBigDecimal(1, amount);
+            fromStatement.setInt(2, fromUserId);
+
+            int updatedRows = fromStatement.executeUpdate();
+
+            if (updatedRows == 0) {
+                throw new IllegalStateException(
+                        "Пользователь-отправитель не существует"
+                );
+            }
+
+
+            toStatement.setBigDecimal(1, amount);
+            toStatement.setInt(2, toUserId);
+
+            updatedRows = toStatement.executeUpdate();
+
+            if (updatedRows == 0) {
+                throw new IllegalStateException(
+                        "Пользователь-получатель не существует"
+                );
+            }
+
+            operationStatement.setInt(1, fromUserId);
+            operationStatement.setInt(2, toUserId);
+            operationStatement.setInt(3, 3);
+            operationStatement.setBigDecimal(4, amount);
+
+            operationStatement.executeUpdate();
+
+            connection.commit();
+
+        } catch (Exception e) {
+
+            connection.rollback();
+            throw e;
+
+        } finally {
+
+            connection.close();
+        }
     }
 }
