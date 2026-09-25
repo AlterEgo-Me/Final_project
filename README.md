@@ -15,7 +15,7 @@ REST API:
 GET /balance?user_id=1 - получить баланс пользователя  
 POST /put?user_id=1&bigDecimal=100 - пополнить баланс на указанную сумму  
 POST /take?user_id=1&bigDecimal=100 - списать сумму с баланса  
-GET /operations?user_id=1 - получить историю операций пользователя
+GET /operations?user_id=1 - получить историю операций пользователя  
 POST /transfer?fromUserId=1&toUserId=2&bigDecimal=100 - перевести средства от одного пользователя другому
 Все параметры передаются через query-параметры. Настройки подключения вынесены в database.properties (файл не включен в репозиторий)
 
